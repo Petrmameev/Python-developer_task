@@ -3,16 +3,16 @@ import json
 import pandas as pd
 from bson import decode_file_iter
 
-data = "sample_collection.metadata.json"
+
+def bson_to_dataframe(filepath):
+    with open(filepath, "rb") as file:
+        data = [doc for doc in decode_file_iter(file)]
+    return pd.DataFrame(data)
 
 
-# def bson_to_dataframe(filepath):
-#     with open(filepath, 'rb') as file:
-#         data = [doc for doc in decode_file_iter(file)]
-#     return pd.DataFrame(data)
-# filepath = 'sample_collection.bson'
-# df = bson_to_dataframe(filepath)
-# print(df.head())
+filepath = "sample_collection.bson"
+df = bson_to_dataframe(filepath)
+# print(df)
 
 
 def bson_to_dataframe(data_bson):
@@ -23,7 +23,6 @@ def bson_to_dataframe(data_bson):
     return pd.DataFrame(data)
 
 
-data_bson = "sample_collection.bson"
 payments = bson_to_dataframe("sample_collection.bson")
 
 
@@ -34,42 +33,27 @@ def aggregate_payments(payments_df, dt_from, dt_upto, group_type):
     mask = (payments_df["dt"] >= start_date) & (payments_df["dt"] <= end_date)
     filtered_payments = payments_df.loc[mask]
     filtered_payments_to_resample = filtered_payments[["dt", "value"]]
+
     if group_type == "day":
+        full_range = pd.date_range(start=start_date, end=end_date, freq="D")
         resampled = filtered_payments_to_resample.resample("D", on="dt").sum()
+        resampled = resampled.reindex(full_range, fill_value=0)
+        dataset = resampled["value"].tolist()
+
     elif group_type == "month":
-        # 'MS' stands for month start frequency
+        full_range = pd.date_range(start=start_date, end=end_date, freq="MS")
         resampled = filtered_payments_to_resample.resample("MS", on="dt").sum()
+        resampled = resampled.reindex(full_range, fill_value=0)
+        dataset = resampled["value"].tolist()
+
     elif group_type == "hour":
+        full_range = pd.date_range(start=start_date, end=end_date, freq="h")
         resampled = filtered_payments_to_resample.resample("h", on="dt").sum()
+        resampled = resampled.reindex(full_range, fill_value=0)
+        dataset = resampled["value"].tolist()
 
-    dataset = resampled["value"].tolist()
     labels = resampled.index.strftime("%Y-%m-%dT%H:%M:%S").tolist()
-
-    response = {"dataset": dataset, "labels": labels}
-    return json.dumps(response)
-
-
-# input_data = {
-#     "dt_from": "2022-09-01T00:00:00",
-#     "dt_upto": "2022-12-31T23:59:00",
-#     "group_type": "month"
-# }
-
-# input_data = {
-#    "dt_from": "2022-10-01T00:00:00",
-#    "dt_upto": "2022-11-30T23:59:00",
-#    "group_type": "day"
-# }
-
-input_data = {
-    "dt_from": "2022-02-01T00:00:00",
-    "dt_upto": "2022-02-02T00:00:00",
-    "group_type": "hour",
-}
-
-
-result = aggregate_payments(
-    payments, input_data["dt_from"], input_data["dt_upto"], input_data["group_type"]
-)
-
-print(result)
+    formatted_json = (
+        f'{{"dataset": {json.dumps(dataset)},\n"labels": {json.dumps(labels)}}}'
+    )
+    return formatted_json
